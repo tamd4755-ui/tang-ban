@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trái tim hạt đỏ</title>
+<style>
+:root{color-scheme:dark;--bg:#000;--fg:#fca5a5;box-sizing:border-box}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#000;--fg:#fca5a5}}
+:root[data-theme="dark"]{--bg:#000;--fg:#fca5a5}
+html,body{margin:0;height:100%;background:var(--bg);overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:pointer}
+.gift{position:fixed;left:0;right:0;text-align:center;font-family:Georgia,"Times New Roman",serif;font-style:italic;font-weight:600;color:#fecaca;letter-spacing:.04em;text-shadow:0 0 6px #f87171,0 0 16px #ef4444,0 0 32px #dc2626;pointer-events:none;padding:0 16px}
+.hint{position:fixed;left:0;right:0;bottom:0;padding:0 16px calc(20px + env(safe-area-inset-bottom,0px));text-align:center;font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--fg);opacity:.7;pointer-events:none;letter-spacing:.02em}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="gift" id="gift">🥰TẶNG BẠN HƯƠNG NHA 🥰</div>
+<div class="hint">Chạm hoặc nhấp để làm trái tim vỡ tung</div>
+<script>
+const SHADES=["#ef4444","#f87171","#fca5a5","#dc2626","#fecaca","#b91c1c"];
+const HEART_COUNT=3200, FLOAT_COUNT=140, TAU=Math.PI*2;
+const cv=document.getElementById("c"), ctx=cv.getContext("2d");
+let W,H,DPR,CX,CY,S,t=0,last=0,acc=0;
+let heart=SHADES.map(()=>[]), floatParticles=[], burstParticles=[];
+const ptr={x:-9999,y:-9999};
+
+class Particle{
+  constructor(x,y,kind,hx,hy){
+    this.kind=kind; this.x=x; this.y=y; this.vx=0; this.vy=0;
+    this.ci=Math.random()*SHADES.length|0;
+    if(kind==="float"){
+      this.maxLife=300+Math.random()*300; this.size=Math.random()*1.5+.6;
+      this.vx=(Math.random()-.5)*.3; this.vy=-Math.random()*.5-.1;
+    }else if(kind==="burst"){
+      const a=Math.random()*TAU, s=Math.random()*9+2;
+      this.vx=Math.cos(a)*s; this.vy=Math.sin(a)*s;
+      this.maxLife=50+Math.random()*50; this.size=Math.random()*2+1;
+    }else{
+      this.hx=hx; this.hy=hy; this.ph=Math.random()*TAU;
+      this.size=Math.random()*1.4+.5; this.maxLife=1;
+    }
+    this.life=this.maxLife;
+  }
+  update(){
+    if(this.kind==="heart"){
+      const sc=S*(1+.025*Math.sin(t*.04));
+      const tx=CX+this.hx*sc, ty=CY-this.hy*sc;
+      let ax=(tx-this.x)*.025+Math.sin(t*.03+this.ph)*.03;
+      let ay=(ty-this.y)*.025+Math.cos(t*.035+this.ph)*.03;
+      const dx=this.x-ptr.x, dy=this.y-ptr.y, d=Math.hypot(dx,dy);
+      if(d<110&&d>0){const f=(1-d/110)*1.2; ax+=dx/d*f; ay+=dy/d*f;}
+      this.vx=(this.vx+ax)*.9; this.vy=(this.vy+ay)*.9;
+    }else if(this.kind==="burst"){
+      this.vx*=.95; this.vy*=.95; this.vy+=.04; this.life--;
+    }else{
+      this.vx+=Math.sin(t*.02+this.x*.01)*.01; this.life--;
+      if(this.life<=0||this.y<-10){
+        this.x=Math.random()*W; this.y=H+Math.random()*20;
+        this.life=this.maxLife;
+      }
+    }
+    this.x+=this.vx; this.y+=this.vy;
+  }
+}
+
+function buildHeart(){
+  heart=SHADES.map(()=>[]);
+  let n=0;
+  while(n<HEART_COUNT){
+    const x=Math.random()*2.4-1.2, y=Math.random()*2.4-1.2;
+    const a=x*x+y*y-1;
+    if(a*a*a-x*x*y*y*y>0) continue;
+    const p=new Particle(CX+x*S, CY-y*S, "heart", x, y);
+    heart[p.ci].push(p); n++;
+  }
+}
+
+function spawnFloat(){
+  floatParticles=[];
+  for(let i=0;i<FLOAT_COUNT;i++){
+    const p=new Particle(Math.random()*W, Math.random()*H, "float");
+    p.life=Math.random()*p.maxLife; // stagger starting life
+    floatParticles.push(p);
+  }
+}
+
+function spawnHeartBurst(x,y){
+  const count=140;
+  for(let i=0;i<count;i++) burstParticles.push(new Particle(x,y,"burst"));
+  // đẩy các hạt trái tim văng ra xa điểm chạm
+  for(const arr of heart) for(const p of arr){
+    const dx=p.x-x, dy=p.y-y, d=Math.hypot(dx,dy)+1;
+    const f=22*Math.min(1,300/(d+40))*(.4+Math.random());
+    p.vx+=dx/d*f+(Math.random()-.5)*6;
+    p.vy+=dy/d*f+(Math.random()-.5)*6;
+  }
+}
+
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=innerWidth; H=innerHeight;
+  cv.width=W*DPR; cv.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  CX=W/2; CY=H*.4; S=Math.min(W*.3,H*.2);
+  const gf=document.getElementById("gift");
+  gf.style.top=(CY+S*1.55)+"px"; gf.style.fontSize=Math.max(22,S*.26)+"px";
+  buildHeart(); spawnFloat();
+  ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
+}
+
+function drawBase(){
+  const by=CY+S*1.25, R=S*1.1;
+  ctx.save(); ctx.translate(CX,by); ctx.scale(1,.2);
+  const g=ctx.createRadialGradient(0,0,0,0,0,R);
+  g.addColorStop(0,"rgba(255,170,160,.95)");
+  g.addColorStop(.5,"rgba(220,38,38,.55)");
+  g.addColorStop(1,"rgba(185,28,28,0)");
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,R,0,TAU); ctx.fill();
+  ctx.strokeStyle="rgba(255,200,195,.8)"; ctx.lineWidth=6;
+  for(let i=0;i<3;i++){
+    ctx.beginPath();
+    const a=t*.03*(i+1)+i*2.1;
+    ctx.arc(0,0,R*(.6+.12*i),a,a+1.7); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function draw(){
+  ctx.globalCompositeOperation="source-over";
+  ctx.fillStyle="rgba(0,0,0,.28)"; ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation="lighter";
+  drawBase();
+  for(let c=0;c<SHADES.length;c++){
+    ctx.fillStyle=SHADES[c]; ctx.strokeStyle=SHADES[c]; ctx.lineWidth=1;
+    ctx.beginPath();
+    for(const p of heart[c]){
+      if(p.vx*p.vx+p.vy*p.vy>9){ctx.moveTo(p.x-p.vx*.9,p.y-p.vy*.9); ctx.lineTo(p.x,p.y);}
+      else ctx.fillRect(p.x,p.y,p.size,p.size);
+    }
+    ctx.stroke();
+  }
+  for(const p of floatParticles){
+    const a=Math.sin(Math.PI*(p.life/p.maxLife))*.8;
+    ctx.globalAlpha=Math.max(0,a); ctx.fillStyle=SHADES[p.ci];
+    ctx.fillRect(p.x,p.y,p.size,p.size);
+  }
+  for(const p of burstParticles){
+    ctx.globalAlpha=Math.max(0,p.life/p.maxLife);
+    ctx.strokeStyle=SHADES[p.ci]; ctx.lineWidth=p.size;
+    ctx.beginPath(); ctx.moveTo(p.x-p.vx*1.5,p.y-p.vy*1.5); ctx.lineTo(p.x,p.y); ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+}
+
+function step(){
+  t++;
+  for(const arr of heart) for(const p of arr) p.update();
+  for(const p of floatParticles) p.update();
+  for(const p of burstParticles) p.update();
+  burstParticles=burstParticles.filter(p=>p.life>0);
+}
+
+function loop(now){
+  acc+=Math.min(now-last,50); last=now;
+  let n=0;
+  while(acc>=16.67&&n<3){step(); acc-=16.67; n++;}
+  draw();
+  requestAnimationFrame(loop);
+}
+
+cv.addEventListener("pointerdown",e=>{ptr.x=e.clientX; ptr.y=e.clientY; spawnHeartBurst(e.clientX,e.clientY);});
+cv.addEventListener("pointermove",e=>{ptr.x=e.clientX; ptr.y=e.clientY;});
+cv.addEventListener("pointerleave",()=>{ptr.x=ptr.y=-9999;});
+addEventListener("resize",resize);
+
+resize();
+setTimeout(()=>spawnHeartBurst(CX,CY),1200);
+requestAnimationFrame(n=>{last=n; loop(n);});
+</script>
+</body>
+</html>
